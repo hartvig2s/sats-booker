@@ -4,7 +4,7 @@
   "description": "Automatic fitness class booker for SATS.no",
   "main": "src/index.js",
   "scripts": {
-    "start": "node railway-start.js",
+    "start": "node src/index.js",
     "dev": "node --watch src/index.js",
     "setup": "node src/setup.js",
     "test": "node test-local.js",

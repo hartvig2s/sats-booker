@@ -1,0 +1,15 @@
+version: '3.8'
+
+services:
+  sats-booker:
+    build: .
+    environment:
+      - SATS_EMAIL=${SATS_EMAIL}
+      - SATS_PASSWORD=${SATS_PASSWORD}
+      - PREFERRED_CLASSES=${PREFERRED_CLASSES}
+      - PREFERRED_TIMES=${PREFERRED_TIMES}
+      - PREFERRED_LOCATIONS=${PREFERRED_LOCATIONS}
+      - BOOKING_SCHEDULE=${BOOKING_SCHEDULE:-0 10 * * *}
+    volumes:
+      - ./logs:/app/logs
+    restart: unless-stopped

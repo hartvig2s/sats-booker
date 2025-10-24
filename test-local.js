@@ -16,9 +16,15 @@ async function testLocal() {
   
   Logger.info('Configuration:');
   Logger.info(`- Email: ${process.env.SATS_EMAIL}`);
-  Logger.info(`- Classes: ${process.env.PREFERRED_CLASSES || 'Any'}`);
-  Logger.info(`- Times: ${process.env.PREFERRED_TIMES || 'Any'}`);
-  Logger.info(`- Locations: ${process.env.PREFERRED_LOCATIONS || 'Any'}`);
+  Logger.info(`- Classes: ${process.env.PREFERRED_CLASSES || 'Any (try: Cycling Interval,Yoga,Body Pump)'}`);
+  Logger.info(`- Times: ${process.env.PREFERRED_TIMES || 'Any (try: 16:00,17:00,18:00,19:00)'}`);
+  Logger.info(`- Locations: ${process.env.PREFERRED_LOCATIONS || 'Any (try: Colosseum,Oslo City)'}`);
+  
+  const targetDate = new Date();
+  targetDate.setDate(targetDate.getDate() + 7);
+  Logger.info(`- Target date: ${targetDate.toLocaleDateString('no-NO')} (7 days from now)`);
+  Logger.info(`- Current time: ${new Date().toLocaleString('no-NO')}`);
+  Logger.info(`- Classes should be released at: 19:00 today for ${targetDate.toLocaleDateString('no-NO')}`);
   
   const booker = new SatsBooker();
   await booker.runBookingProcess();

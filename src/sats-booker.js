@@ -69,88 +69,127 @@ class SatsBooker {
       Logger.error(`Login failed: ${error.message}`);
       return false;
     }
-  }  async
- findAvailableClasses() {
+  }  async nav
+igateToBookingPage() {
     try {
-      Logger.info('Searching for available classes...');
+      Logger.info('Navigating to group training booking page...');
       
-      // Calculate target date (7 days from now)
-      const targetDate = new Date();
-      targetDate.setDate(targetDate.getDate() + config.booking.daysInAdvance);
-      const targetDateStr = targetDate.toLocaleDateString('no-NO');
-      
-      Logger.info(`Looking for classes on: ${targetDateStr} (7 days from now)`);
-      Logger.info(`Current time: ${new Date().toLocaleString('no-NO')}`);
-      Logger.info(`Classes should be released at: ${config.booking.bookingTime} today for ${targetDateStr}`);
-      
-      // Navigate to class booking page
-      await this.page.goto(`${config.sats.baseUrl}/trening/gruppetimer`, { 
+      // Go directly to the booking page URL from the screenshot
+      await this.page.goto(`${config.sats.baseUrl}/book?club-search=&clubIds=212&class-search=&groupExerciseTypeIds=242&groupExerciseTypeIds=242&instructor-search=`, { 
         waitUntil: 'networkidle2' 
       });
       
-      // Wait for page to load
+      // Wait for the page to load
       await this.page.waitForTimeout(3000);
       
-      // Take screenshot for debugging (local only)
+      // Take screenshot for debugging
       if (config.development.isLocal) {
-        await this.page.screenshot({ path: 'debug-classes-page.png', fullPage: true });
-        Logger.info('Classes page screenshot saved as debug-classes-page.png');
+        await this.page.screenshot({ path: 'debug-booking-page.png', fullPage: true });
+        Logger.info('Booking page screenshot saved as debug-booking-page.png');
       }
       
-      // Try to find and click date picker or navigate to target date
-      try {
-        // Look for date navigation or calendar
-        const dateSelector = await this.page.$('.date-picker, .calendar, [data-testid="date-picker"]');
-        if (dateSelector) {
-          Logger.info('Found date picker, navigating to target date...');
-          // Implementation depends on SATS.no's actual UI structure
-        }
-      } catch (e) {
-        Logger.warning('Could not find date picker, using current view');
-      }
+      return true;
+    } catch (error) {
+      Logger.error(`Failed to navigate to booking page: ${error.message}`);
+      return false;
+    }
+  }
+
+  async navigateToTargetDate() {
+    try {
+      // Calculate target date (7 days from now)
+      const targetDate = new Date();
+      targetDate.setDate(targetDate.getDate() + config.booking.daysInAdvance);
+      const targetDay = targetDate.getDate();
       
-      // Extract available classes
-      const availableClasses = await this.page.evaluate((targetDateStr, preferences) => {
-        const classes = [];
-        
-        // Try multiple selectors that SATS might use
-        const possibleSelectors = [
-          '.class-item',
-          '.group-class',
-          '.workout-class',
-          '[data-testid="class"]',
-          '.schedule-item',
-          '.class-card',
-          '.booking-item'
-        ];
-        
-        let classElements = [];
-        for (const selector of possibleSelectors) {
-          classElements = document.querySelectorAll(selector);
-          if (classElements.length > 0) {
-            console.log(`Found ${classElements.length} elements with selector: ${selector}`);
-            break;
+      Logger.info(`Looking for classes on day ${targetDay} (7 days from now)`);
+      
+      // Find and click the target date in the calendar
+      const dateButton = await this.page.$(`button:has-text("${targetDay}")`);
+      if (dateButton) {
+        Logger.info(`Clicking on date ${targetDay}`);
+        await dateButton.click();
+        await this.page.waitForTimeout(2000);
+        return true;
+      } else {
+        // Try alternative selector for date buttons
+        const dateButtons = await this.page.$$('button');
+        for (const button of dateButtons) {
+          const text = await button.textContent();
+          if (text && text.trim() === targetDay.toString()) {
+            Logger.info(`Found and clicking date button: ${targetDay}`);
+            await button.click();
+            await this.page.waitForTimeout(2000);
+            return true;
           }
         }
+      }
+      
+      Logger.warning(`Could not find date ${targetDay} in calendar`);
+      return false;
+    } catch (error) {
+      Logger.error(`Error navigating to target date: ${error.message}`);
+      return false;
+    }
+  }
+
+  async findAvailableClasses() {
+    try {
+      Logger.info('Searching for available classes...');
+      
+      // Navigate to booking page
+      const navSuccess = await this.navigateToBookingPage();
+      if (!navSuccess) {
+        throw new Error('Failed to navigate to booking page');
+      }
+      
+      // Try to navigate to target date
+      await this.navigateToTargetDate();
+      
+      // Extract available classes based on the actual SATS.no structure
+      const availableClasses = await this.page.evaluate((preferences) => {
+        const classes = [];
         
-        console.log(`Total class elements found: ${classElements.length}`);
+        // Look for class rows in the schedule
+        // Based on the screenshot, classes appear to be in rows with time, name, and location
+        const classRows = document.querySelectorAll('div[class*="row"], tr, .class-item');
         
-        classElements.forEach((element, index) => {
+        console.log(`Found ${classRows.length} potential class rows`);
+        
+        classRows.forEach((row, index) => {
           try {
-            // Try different ways to extract class information
-            const className = element.querySelector('.class-name, .workout-name, h3, .title, .name')?.textContent?.trim();
-            const classTime = element.querySelector('.class-time, .time, .start-time')?.textContent?.trim();
-            const location = element.querySelector('.class-location, .location, .gym, .center')?.textContent?.trim();
-            const classDate = element.querySelector('.class-date, .date')?.textContent?.trim();
+            // Extract time (looks like "11:00", "16:00" etc.)
+            const timeElement = row.querySelector('*:contains(":")') || 
+                              Array.from(row.querySelectorAll('*')).find(el => 
+                                /^\d{1,2}:\d{2}$/.test(el.textContent?.trim()));
+            const classTime = timeElement?.textContent?.trim();
             
-            // Check if class is available (not fully booked)
-            const isFullyBooked = element.classList.contains('fully-booked') || 
-                                element.classList.contains('sold-out') ||
-                                element.querySelector('.fully-booked, .sold-out');
+            // Extract class name (like "Cycling Interval")
+            const nameElements = row.querySelectorAll('*');
+            let className = '';
+            for (const el of nameElements) {
+              const text = el.textContent?.trim();
+              if (text && text.length > 3 && !text.includes(':') && !text.includes('min')) {
+                className = text;
+                break;
+              }
+            }
             
-            console.log(`Class ${index}: ${className} at ${classTime} (${location}) - Booked: ${isFullyBooked}`);
+            // Extract location (like "Colosseum")
+            const locationElement = row.querySelector('select, .location') || 
+                                  Array.from(row.querySelectorAll('*')).find(el => 
+                                    el.textContent?.includes('Colosseum') || 
+                                    el.textContent?.includes('Oslo'));
+            const location = locationElement?.textContent?.trim() || 'Unknown';
             
-            if (className && classTime && !isFullyBooked) {
+            // Check for "Book" button - indicates class is available
+            const bookButton = row.querySelector('button:contains("Book"), .book-button, button[class*="book"]') ||
+                             Array.from(row.querySelectorAll('button')).find(btn => 
+                               btn.textContent?.toLowerCase().includes('book'));
+            
+            console.log(`Row ${index}: Time=${classTime}, Name=${className}, Location=${location}, HasBookButton=${!!bookButton}`);
+            
+            if (classTime && className && bookButton) {
               // Check if matches preferences
               const matchesClass = preferences.preferredClasses.length === 0 || 
                                  preferences.preferredClasses.some(pref => 
@@ -162,26 +201,25 @@ class SatsBooker {
               
               const matchesLocation = preferences.preferredLocations.length === 0 || 
                                     preferences.preferredLocations.some(pref => 
-                                      location?.toLowerCase().includes(pref.toLowerCase()));
+                                      location.toLowerCase().includes(pref.toLowerCase()));
               
               if (matchesClass && matchesTime && matchesLocation) {
                 classes.push({
                   name: className,
                   time: classTime,
-                  location: location || 'Unknown location',
-                  date: classDate || targetDateStr,
-                  index: index,
-                  element: element.outerHTML.substring(0, 200) // For debugging
+                  location: location,
+                  bookButton: bookButton,
+                  index: index
                 });
               }
             }
           } catch (e) {
-            console.log(`Error processing class element ${index}:`, e);
+            console.log(`Error processing row ${index}:`, e);
           }
         });
         
         return classes;
-      }, targetDateStr, config.booking);
+      }, config.booking);
       
       Logger.info(`Found ${availableClasses.length} matching classes`);
       
@@ -197,25 +235,53 @@ class SatsBooker {
       Logger.error(`Error finding classes: ${error.message}`);
       return [];
     }
-  }  as
-ync bookClass(classInfo) {
+  }  a
+sync bookClass(classInfo) {
     try {
       Logger.info(`Attempting to book: ${classInfo.name} at ${classInfo.time}`);
       
-      if (config.development.isLocal) {
+      if (config.development.isLocal && process.env.NODE_ENV !== 'production') {
         Logger.warning('LOCAL MODE: Would book class but not actually clicking (set NODE_ENV=production to enable real booking)');
+        Logger.info(`Would click the "Book" button for: ${classInfo.name} at ${classInfo.time}`);
         return true;
       }
       
-      // Click on the class to open booking modal
-      await this.page.click(`[data-class-id="${classInfo.id}"]`);
-      await this.page.waitForSelector('.booking-modal');
+      // Click the book button for this specific class
+      await this.page.evaluate((index) => {
+        const classRows = document.querySelectorAll('div[class*="row"], tr, .class-item');
+        const targetRow = classRows[index];
+        if (targetRow) {
+          const bookButton = targetRow.querySelector('button:contains("Book"), .book-button, button[class*="book"]') ||
+                           Array.from(targetRow.querySelectorAll('button')).find(btn => 
+                             btn.textContent?.toLowerCase().includes('book'));
+          if (bookButton) {
+            bookButton.click();
+            return true;
+          }
+        }
+        return false;
+      }, classInfo.index);
       
-      // Confirm booking
-      await this.page.click('.confirm-booking-btn');
-      await this.page.waitForSelector('.booking-success', { timeout: 5000 });
+      // Wait for booking confirmation or modal
+      await this.page.waitForTimeout(2000);
       
-      Logger.success(`Successfully booked: ${classInfo.name} at ${classInfo.time}`);
+      // Look for confirmation modal or success message
+      try {
+        await this.page.waitForSelector('.booking-success, .success, .confirmation', { timeout: 5000 });
+        Logger.success(`Successfully booked: ${classInfo.name} at ${classInfo.time}`);
+        return true;
+      } catch (e) {
+        // Check if there's a confirmation button to click
+        const confirmButton = await this.page.$('button:contains("Confirm"), button:contains("Bekreft"), .confirm-button');
+        if (confirmButton) {
+          await confirmButton.click();
+          await this.page.waitForTimeout(2000);
+          Logger.success(`Successfully booked: ${classInfo.name} at ${classInfo.time}`);
+          return true;
+        }
+      }
+      
+      Logger.warning('Booking may have succeeded but no clear confirmation found');
       return true;
     } catch (error) {
       Logger.error(`Failed to book class: ${error.message}`);
@@ -246,10 +312,10 @@ ync bookClass(classInfo) {
     } catch (error) {
       Logger.error(`Booking process failed: ${error.message}`);
     } finally {
-      if (!config.development.isLocal) {
+      if (!config.development.isLocal || process.env.NODE_ENV === 'production') {
         await this.cleanup();
       } else {
-        Logger.info('LOCAL MODE: Keeping browser open for inspection');
+        Logger.info('LOCAL MODE: Keeping browser open for inspection (30 seconds)');
         // Keep browser open for 30 seconds in local mode
         setTimeout(async () => {
           await this.cleanup();

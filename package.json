@@ -8,15 +8,26 @@
     "dev": "node --watch src/index.js",
     "setup": "node src/setup.js",
     "test": "node test-local.js",
-    "test-now": "node src/index.js --now"
+    "test-now": "node src/index.js --now",
+    "email-service": "node email-booking-service.js",
+    "test-email-booking": "node test-email-booking.js"
   },
   "dependencies": {
-    "puppeteer": "^21.5.0",
-    "node-cron": "^3.0.3",
+    "chalk": "^4.1.2",
     "dotenv": "^16.3.1",
-    "chalk": "^4.1.2"
+    "fs": "^0.0.1-security",
+    "imap": "^0.8.19",
+    "mailparser": "^3.7.5",
+    "node-cron": "^3.0.3",
+    "nodemailer": "^7.0.10",
+    "puppeteer": "^21.5.0"
   },
-  "keywords": ["sats", "fitness", "booking", "automation"],
+  "keywords": [
+    "sats",
+    "fitness",
+    "booking",
+    "automation"
+  ],
   "author": "",
   "license": "MIT"
 }

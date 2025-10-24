@@ -4,13 +4,15 @@
   "description": "Automatic fitness class booker for SATS.no",
   "main": "src/index.js",
   "scripts": {
-    "start": "node src/index.js",
+    "start": "node railway-start.js",
     "dev": "node --watch src/index.js",
     "setup": "node src/setup.js",
     "test": "node test-local.js",
     "test-now": "node src/index.js --now",
     "email-service": "node email-booking-service.js",
-    "test-email-booking": "node test-email-booking.js"
+    "test-email-booking": "node test-email-booking.js",
+    "start-main": "node src/index.js",
+    "start-email": "RAILWAY_SERVICE_TYPE=email node railway-start.js"
   },
   "dependencies": {
     "chalk": "^4.1.2",

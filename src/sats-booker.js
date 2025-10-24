@@ -12,7 +12,8 @@ class SatsBooker {
     Logger.info('Initializing SATS booker...');
     
     const browserOptions = {
-      headless: 'new',
+      headless: config.development.headless ? 'new' : false,
+      slowMo: config.development.slowMo,
       args: [
         '--no-sandbox',
         '--disable-setuid-sandbox',
@@ -29,6 +30,12 @@ class SatsBooker {
       browserOptions.executablePath = process.env.PUPPETEER_EXECUTABLE_PATH;
     }
 
+    // Local development: show browser window
+    if (config.development.isLocal) {
+      Logger.info('Running in local development mode - browser window will be visible');
+      browserOptions.devtools = true;
+    }
+
     this.browser = await puppeteer.launch(browserOptions);
     this.page = await this.browser.newPage();
     await this.page.setViewport({ width: 1280, height: 720 });
@@ -37,16 +44,24 @@ class SatsBooker {
   async login() {
     try {
       Logger.info('Logging into SATS...');
-      await this.page.goto(`${config.sats.baseUrl}/login`);
+      await this.page.goto(`${config.sats.baseUrl}/login`, { 
+        waitUntil: 'networkidle2' 
+      });
+      
+      // Take screenshot for debugging (local only)
+      if (config.development.isLocal) {
+        await this.page.screenshot({ path: 'debug-login-page.png' });
+        Logger.info('Login page screenshot saved as debug-login-page.png');
+      }
       
       // Wait for login form and fill credentials
-      await this.page.waitForSelector('input[type="email"]');
-      await this.page.type('input[type="email"]', config.sats.email);
-      await this.page.type('input[type="password"]', config.sats.password);
+      await this.page.waitForSelector('input[type="email"], input[name="email"], #email');
+      await this.page.type('input[type="email"], input[name="email"], #email', config.sats.email);
+      await this.page.type('input[type="password"], input[name="password"], #password', config.sats.password);
       
       // Submit login form
-      await this.page.click('button[type="submit"]');
-      await this.page.waitForNavigation();
+      await this.page.click('button[type="submit"], input[type="submit"], .login-button');
+      await this.page.waitForNavigation({ waitUntil: 'networkidle2' });
       
       Logger.success('Successfully logged into SATS');
       return true;
@@ -54,55 +69,143 @@ class SatsBooker {
       Logger.error(`Login failed: ${error.message}`);
       return false;
     }
-  }  asy
-nc findAvailableClasses() {
+  }  async
+ findAvailableClasses() {
     try {
       Logger.info('Searching for available classes...');
       
       // Calculate target date (7 days from now)
       const targetDate = new Date();
       targetDate.setDate(targetDate.getDate() + config.booking.daysInAdvance);
+      const targetDateStr = targetDate.toLocaleDateString('no-NO');
+      
+      Logger.info(`Looking for classes on: ${targetDateStr} (7 days from now)`);
+      Logger.info(`Current time: ${new Date().toLocaleString('no-NO')}`);
+      Logger.info(`Classes should be released at: ${config.booking.bookingTime} today for ${targetDateStr}`);
       
       // Navigate to class booking page
-      await this.page.goto(`${config.sats.baseUrl}/trening/gruppetimer`);
-      await this.page.waitForSelector('.class-schedule');
+      await this.page.goto(`${config.sats.baseUrl}/trening/gruppetimer`, { 
+        waitUntil: 'networkidle2' 
+      });
       
-      // Filter classes by date, preferences, and availability
-      const availableClasses = await this.page.evaluate((targetDate, preferences) => {
+      // Wait for page to load
+      await this.page.waitForTimeout(3000);
+      
+      // Take screenshot for debugging (local only)
+      if (config.development.isLocal) {
+        await this.page.screenshot({ path: 'debug-classes-page.png', fullPage: true });
+        Logger.info('Classes page screenshot saved as debug-classes-page.png');
+      }
+      
+      // Try to find and click date picker or navigate to target date
+      try {
+        // Look for date navigation or calendar
+        const dateSelector = await this.page.$('.date-picker, .calendar, [data-testid="date-picker"]');
+        if (dateSelector) {
+          Logger.info('Found date picker, navigating to target date...');
+          // Implementation depends on SATS.no's actual UI structure
+        }
+      } catch (e) {
+        Logger.warning('Could not find date picker, using current view');
+      }
+      
+      // Extract available classes
+      const availableClasses = await this.page.evaluate((targetDateStr, preferences) => {
         const classes = [];
-        const classElements = document.querySelectorAll('.class-item');
         
-        classElements.forEach(element => {
-          const classDate = element.querySelector('.class-date')?.textContent;
-          const className = element.querySelector('.class-name')?.textContent;
-          const classTime = element.querySelector('.class-time')?.textContent;
-          const location = element.querySelector('.class-location')?.textContent;
-          const isAvailable = !element.classList.contains('fully-booked');
-          
-          if (isAvailable && this.matchesPreferences(className, classTime, location, preferences)) {
-            classes.push({
-              name: className,
-              time: classTime,
-              location: location,
-              date: classDate,
-              element: element
-            });
+        // Try multiple selectors that SATS might use
+        const possibleSelectors = [
+          '.class-item',
+          '.group-class',
+          '.workout-class',
+          '[data-testid="class"]',
+          '.schedule-item',
+          '.class-card',
+          '.booking-item'
+        ];
+        
+        let classElements = [];
+        for (const selector of possibleSelectors) {
+          classElements = document.querySelectorAll(selector);
+          if (classElements.length > 0) {
+            console.log(`Found ${classElements.length} elements with selector: ${selector}`);
+            break;
+          }
+        }
+        
+        console.log(`Total class elements found: ${classElements.length}`);
+        
+        classElements.forEach((element, index) => {
+          try {
+            // Try different ways to extract class information
+            const className = element.querySelector('.class-name, .workout-name, h3, .title, .name')?.textContent?.trim();
+            const classTime = element.querySelector('.class-time, .time, .start-time')?.textContent?.trim();
+            const location = element.querySelector('.class-location, .location, .gym, .center')?.textContent?.trim();
+            const classDate = element.querySelector('.class-date, .date')?.textContent?.trim();
+            
+            // Check if class is available (not fully booked)
+            const isFullyBooked = element.classList.contains('fully-booked') || 
+                                element.classList.contains('sold-out') ||
+                                element.querySelector('.fully-booked, .sold-out');
+            
+            console.log(`Class ${index}: ${className} at ${classTime} (${location}) - Booked: ${isFullyBooked}`);
+            
+            if (className && classTime && !isFullyBooked) {
+              // Check if matches preferences
+              const matchesClass = preferences.preferredClasses.length === 0 || 
+                                 preferences.preferredClasses.some(pref => 
+                                   className.toLowerCase().includes(pref.toLowerCase()));
+              
+              const matchesTime = preferences.preferredTimes.length === 0 || 
+                                preferences.preferredTimes.some(pref => 
+                                  classTime.includes(pref));
+              
+              const matchesLocation = preferences.preferredLocations.length === 0 || 
+                                    preferences.preferredLocations.some(pref => 
+                                      location?.toLowerCase().includes(pref.toLowerCase()));
+              
+              if (matchesClass && matchesTime && matchesLocation) {
+                classes.push({
+                  name: className,
+                  time: classTime,
+                  location: location || 'Unknown location',
+                  date: classDate || targetDateStr,
+                  index: index,
+                  element: element.outerHTML.substring(0, 200) // For debugging
+                });
+              }
+            }
+          } catch (e) {
+            console.log(`Error processing class element ${index}:`, e);
           }
         });
         
         return classes;
-      }, targetDate.toISOString().split('T')[0], config.booking);
+      }, targetDateStr, config.booking);
       
       Logger.info(`Found ${availableClasses.length} matching classes`);
+      
+      if (config.development.isLocal && availableClasses.length > 0) {
+        Logger.info('Available classes:');
+        availableClasses.forEach((cls, i) => {
+          Logger.info(`  ${i + 1}. ${cls.name} at ${cls.time} (${cls.location})`);
+        });
+      }
+      
       return availableClasses;
     } catch (error) {
       Logger.error(`Error finding classes: ${error.message}`);
       return [];
     }
-  }  async 
-bookClass(classInfo) {
+  }  as
+ync bookClass(classInfo) {
     try {
       Logger.info(`Attempting to book: ${classInfo.name} at ${classInfo.time}`);
+      
+      if (config.development.isLocal) {
+        Logger.warning('LOCAL MODE: Would book class but not actually clicking (set NODE_ENV=production to enable real booking)');
+        return true;
+      }
       
       // Click on the class to open booking modal
       await this.page.click(`[data-class-id="${classInfo.id}"]`);
@@ -143,7 +246,15 @@ bookClass(classInfo) {
     } catch (error) {
       Logger.error(`Booking process failed: ${error.message}`);
     } finally {
-      await this.cleanup();
+      if (!config.development.isLocal) {
+        await this.cleanup();
+      } else {
+        Logger.info('LOCAL MODE: Keeping browser open for inspection');
+        // Keep browser open for 30 seconds in local mode
+        setTimeout(async () => {
+          await this.cleanup();
+        }, 30000);
+      }
     }
   }
 

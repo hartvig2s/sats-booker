@@ -13,17 +13,31 @@ Automatic fitness class booking system for SATS.no that books classes exactly 7 
 
 ## Quick Start
 
+### Local Testing (Recommended First)
 1. **Install dependencies:**
    ```bash
    npm install
    ```
 
-2. **Run setup:**
+2. **Create .env file:**
+   ```bash
+   cp .env.example .env
+   # Edit .env with your SATS credentials
+   ```
+
+3. **Test locally:**
+   ```bash
+   npm test
+   ```
+   This opens a browser window so you can see what happens!
+
+### Production Deployment
+1. **Run setup:**
    ```bash
    npm run setup
    ```
 
-3. **Start the scheduler:**
+2. **Start the scheduler:**
    ```bash
    npm start
    ```

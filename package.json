@@ -6,7 +6,9 @@
   "scripts": {
     "start": "node src/index.js",
     "dev": "node --watch src/index.js",
-    "setup": "node src/setup.js"
+    "setup": "node src/setup.js",
+    "test": "node test-local.js",
+    "test-now": "node src/index.js --now"
   },
   "dependencies": {
     "puppeteer": "^21.5.0",
